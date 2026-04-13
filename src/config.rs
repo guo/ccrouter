@@ -42,10 +42,18 @@ pub struct Profile {
     pub format: ApiFormat,
     #[serde(default)]
     pub model_map: ModelMap,
+    /// Direct API key — set programmatically (e.g. from env at startup), not stored in TOML.
+    #[serde(skip)]
+    pub api_key_direct: Option<String>,
 }
 
 impl Profile {
     pub fn api_key(&self) -> Option<String> {
+        if let Some(ref k) = self.api_key_direct {
+            if !k.is_empty() {
+                return Some(k.clone());
+            }
+        }
         if self.api_key_env.is_empty() {
             return None;
         }

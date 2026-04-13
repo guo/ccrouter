@@ -8,14 +8,19 @@ use axum::{
 use serde_json::json;
 use std::net::SocketAddr;
 use std::sync::Arc;
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, oneshot, RwLock};
 use tracing::info;
 
 use crate::{config::Config, handler::handle_messages};
 
 pub type SharedState = Arc<RwLock<Config>>;
 
-pub async fn run(config: Config, config_rx: mpsc::Receiver<Config>) -> anyhow::Result<()> {
+/// Start the proxy server. If `shutdown_rx` is provided the server stops when it fires.
+pub async fn run(
+    config: Config,
+    config_rx: mpsc::Receiver<Config>,
+    shutdown_rx: Option<oneshot::Receiver<()>>,
+) -> anyhow::Result<()> {
     let addr: SocketAddr = format!("{}:{}", config.proxy.host, config.proxy.port)
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid bind address: {}", e))?;
@@ -41,7 +46,17 @@ pub async fn run(config: Config, config_rx: mpsc::Receiver<Config>) -> anyhow::R
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     info!("ccrouter listening on http://{}", addr);
 
-    axum::serve(listener, app).await?;
+    match shutdown_rx {
+        Some(rx) => {
+            axum::serve(listener, app)
+                .with_graceful_shutdown(async { let _ = rx.await; })
+                .await?;
+        }
+        None => {
+            axum::serve(listener, app).await?;
+        }
+    }
+
     Ok(())
 }
 

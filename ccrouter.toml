@@ -22,6 +22,16 @@ base_url = "https://api.anthropic.com"
 api_key_env = "ANTHROPIC_API_KEY"
 format = "anthropic"  # pass-through, no transformation
 
+# No api_key_env needed when you pass the token inline:
+#   ANTHROPIC_BASE_URL=http://localhost:15721 ANTHROPIC_AUTH_TOKEN=sk-... claude .
+# ccrouter forwards whatever token the client sends.
+[[profiles]]
+id = "passthrough"
+name = "Token from caller"
+base_url = "https://api.anthropic.com"
+api_key_env = ""   # empty = use token from incoming request
+format = "anthropic"
+
 [[profiles]]
 id = "openai"
 name = "OpenAI GPT"

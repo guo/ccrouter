@@ -35,6 +35,13 @@ pub async fn handle_messages(
         }
     };
 
+    // Resolve the API key: profile config takes priority, then fall back to
+    // whatever the caller passed in (ANTHROPIC_AUTH_TOKEN / x-api-key header).
+    // This lets users do:
+    //   ANTHROPIC_BASE_URL=http://localhost:PORT ANTHROPIC_AUTH_TOKEN=sk-... claude .
+    // without needing to configure a key in the profile at all.
+    let api_key = profile.api_key().or_else(|| extract_incoming_key(&headers));
+
     info!(
         "→ [{}] {} ({})",
         profile.id,
@@ -54,14 +61,38 @@ pub async fn handle_messages(
     };
 
     match profile.format {
-        ApiFormat::Anthropic => forward_anthropic(profile, headers, body_value).await,
-        ApiFormat::OpenAI => forward_openai(profile, headers, body_value).await,
+        ApiFormat::Anthropic => forward_anthropic(profile, api_key, headers, body_value).await,
+        ApiFormat::OpenAI => forward_openai(profile, api_key, headers, body_value).await,
     }
+}
+
+/// Extract the API key from the incoming request's auth headers.
+fn extract_incoming_key(headers: &HeaderMap) -> Option<String> {
+    // x-api-key (Anthropic native)
+    if let Some(v) = headers.get("x-api-key") {
+        if let Ok(s) = v.to_str() {
+            if !s.is_empty() && s != "ccrouter-managed" {
+                return Some(s.to_string());
+            }
+        }
+    }
+    // Authorization: Bearer <token>
+    if let Some(v) = headers.get("authorization") {
+        if let Ok(s) = v.to_str() {
+            if let Some(token) = s.strip_prefix("Bearer ") {
+                if !token.is_empty() && token != "ccrouter-managed" {
+                    return Some(token.to_string());
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Pass-through to an Anthropic-compatible endpoint: just swap auth + base URL.
 async fn forward_anthropic(
     profile: Profile,
+    api_key: Option<String>,
     original_headers: HeaderMap,
     body: Value,
 ) -> Result<Response<Body>, StatusCode> {
@@ -71,8 +102,7 @@ async fn forward_anthropic(
     let client = reqwest::Client::new();
     let mut req = client.post(&url).json(&body);
 
-    // Auth headers
-    if let Some(key) = profile.api_key() {
+    if let Some(key) = api_key {
         req = req.header("x-api-key", &key).header("authorization", format!("Bearer {}", key));
     }
 
@@ -109,6 +139,7 @@ async fn forward_anthropic(
 /// Transform Anthropic request → OpenAI, forward, then transform response back.
 async fn forward_openai(
     profile: Profile,
+    api_key: Option<String>,
     original_headers: HeaderMap,
     body: Value,
 ) -> Result<Response<Body>, StatusCode> {
@@ -133,7 +164,7 @@ async fn forward_openai(
     let client = reqwest::Client::new();
     let mut req = client.post(&url).json(&openai_body);
 
-    if let Some(key) = profile.api_key() {
+    if let Some(key) = api_key {
         req = req.header("authorization", format!("Bearer {}", key));
     }
     req = forward_headers(req, &original_headers);
