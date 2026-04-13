@@ -73,6 +73,7 @@ async fn main() -> Result<()> {
     let cli = Cli::parse();
 
     let config_path = cli.config.unwrap_or_else(config::find_config_path);
+    load_dotenv_for_config(&config_path)?;
 
     match cli.command {
         Command::Start { port } => cmd_start(config_path, port).await,
@@ -291,4 +292,37 @@ fn cmd_setup(config_path: PathBuf, port_override: Option<u16>, undo: bool) -> Re
 
 fn example_config_hint() -> &'static str {
     "cp ccrouter.toml ~/.config/ccrouter/config.toml   (use the example from the repo)"
+}
+
+fn load_dotenv_for_config(config_path: &std::path::Path) -> Result<()> {
+    let env_path = config_path.with_file_name(".env");
+    if !env_path.exists() {
+        return Ok(());
+    }
+
+    let content = std::fs::read_to_string(&env_path)?;
+    for raw_line in content.lines() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let line = line.strip_prefix("export ").unwrap_or(line);
+        let Some((key, value)) = line.split_once('=') else {
+            continue;
+        };
+
+        let key = key.trim();
+        let value = value.trim().trim_matches('"').trim_matches('\'');
+
+        if key.is_empty() {
+            continue;
+        }
+
+        if std::env::var_os(key).is_none() {
+            unsafe { std::env::set_var(key, value); }
+        }
+    }
+
+    Ok(())
 }

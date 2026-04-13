@@ -11,6 +11,31 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
+fn mask_secret(value: &str) -> String {
+    if value.len() <= 8 {
+        return "***".to_string();
+    }
+    format!("{}***{}", &value[..4], &value[value.len() - 4..])
+}
+
+fn log_request_headers(prefix: &str, headers: &HeaderMap) {
+    let mut lines = Vec::new();
+    for (name, value) in headers.iter() {
+        let raw = value.to_str().unwrap_or("<binary>");
+        let masked = match name.as_str() {
+            "authorization" => raw
+                .strip_prefix("Bearer ")
+                .map(|t| format!("Bearer {}", mask_secret(t)))
+                .unwrap_or_else(|| mask_secret(raw)),
+            "x-api-key" | "x-goog-api-key" => mask_secret(raw),
+            _ => raw.to_string(),
+        };
+        lines.push(format!("{}: {}", name.as_str(), masked));
+    }
+    debug!("{} headers:\n{}", prefix, lines.join("\n"));
+}
+
+
 use crate::{
     config::{ApiFormat, Config, Profile},
     stream::openai_to_anthropic_sse,
@@ -44,6 +69,7 @@ pub async fn handle_messages(
             ApiFormat::OpenAI => "transform",
         }
     );
+    log_request_headers("incoming", &headers);
 
     let body_value: Value = match serde_json::from_slice(&body) {
         Ok(v) => v,
@@ -79,10 +105,12 @@ async fn forward_anthropic(
 
     if let Some(key) = api_key {
         req = req.header("x-api-key", &key).header("authorization", format!("Bearer {}", key));
+        debug!("outgoing auth: authorization + x-api-key set");
     }
 
     // Forward safe headers from original request
     req = forward_headers(req, &original_headers);
+    debug!("anthropic upstream url: {}", url);
 
     let response = match req.send().await {
         Ok(r) => r,
@@ -141,13 +169,13 @@ async fn forward_openai(
 
     if let Some(key) = api_key {
         req = req.header("authorization", format!("Bearer {}", key));
+        debug!("outgoing auth: authorization set");
     }
     // Forward accept but NOT anthropic-specific headers (would confuse OpenAI endpoints).
     if let Some(val) = original_headers.get("accept") {
         req = req.header("accept", val);
     }
-    // Suppress the incoming user-agent; let reqwest set its own.
-    let _ = &original_headers;
+    debug!("openai upstream url: {}", url);
 
     let response = match req.send().await {
         Ok(r) => r,
@@ -219,7 +247,20 @@ fn forward_headers(mut req: reqwest::RequestBuilder, headers: &HeaderMap) -> req
             req = req.header(*key, val);
         }
     }
-    req
+
+    // Ensure the Claude Code beta marker is present for Anthropic-compatible gateways.
+    let beta = headers
+        .get("anthropic-beta")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let merged_beta = if beta.is_empty() {
+        "claude-code-20250219".to_string()
+    } else if beta.contains("claude-code-20250219") {
+        beta.to_string()
+    } else {
+        format!("{},claude-code-20250219", beta)
+    };
+    req.header("anthropic-beta", merged_beta)
 }
 
 fn copy_response_headers(src: &reqwest::header::HeaderMap, dst: &mut HeaderMap) {
