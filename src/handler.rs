@@ -142,7 +142,12 @@ async fn forward_openai(
     if let Some(key) = api_key {
         req = req.header("authorization", format!("Bearer {}", key));
     }
-    req = forward_headers(req, &original_headers);
+    // Forward accept but NOT anthropic-specific headers (would confuse OpenAI endpoints).
+    if let Some(val) = original_headers.get("accept") {
+        req = req.header("accept", val);
+    }
+    // Suppress the incoming user-agent; let reqwest set its own.
+    let _ = &original_headers;
 
     let response = match req.send().await {
         Ok(r) => r,
