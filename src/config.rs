@@ -103,6 +103,37 @@ impl Config {
     pub fn active_profile(&self) -> Option<&Profile> {
         self.profiles.iter().find(|p| p.id == self.active.profile)
     }
+
+    /// Merge another config on top of this one.
+    /// - Profiles with same id are replaced by the override.
+    /// - New profiles in override are appended.
+    /// - [proxy] and [active] in override win if present in the override file.
+    fn merge(mut self, override_cfg: PartialConfig) -> Self {
+        if let Some(proxy) = override_cfg.proxy {
+            self.proxy = proxy;
+        }
+        if let Some(active) = override_cfg.active {
+            self.active = active;
+        }
+        for p in override_cfg.profiles {
+            if let Some(existing) = self.profiles.iter_mut().find(|e| e.id == p.id) {
+                *existing = p;
+            } else {
+                self.profiles.push(p);
+            }
+        }
+        self
+    }
+}
+
+/// A partial config used only for the local override file.
+/// All fields are optional so an empty file (or one with only [[profiles]]) is valid.
+#[derive(Debug, Deserialize)]
+struct PartialConfig {
+    proxy: Option<ProxySettings>,
+    active: Option<ActiveConfig>,
+    #[serde(default)]
+    profiles: Vec<Profile>,
 }
 
 pub fn find_config_path() -> PathBuf {
@@ -116,11 +147,35 @@ pub fn find_config_path() -> PathBuf {
     PathBuf::from(format!("{}/.config/ccrouter/config.toml", home))
 }
 
+/// Return the path of the local override file alongside the main config.
+/// e.g.  ccrouter.toml       → ccrouter.local.toml
+///       config.toml         → config.local.toml
+pub fn local_override_path(main: &Path) -> PathBuf {
+    let stem = main
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy();
+    let local_name = format!("{}.local.toml", stem);
+    main.with_file_name(local_name)
+}
+
 pub fn load_config(path: &Path) -> Result<Config> {
     let content = std::fs::read_to_string(path)
         .with_context(|| format!("Cannot read config file: {}", path.display()))?;
-    let config: Config = toml::from_str(&content)
+    let mut config: Config = toml::from_str(&content)
         .with_context(|| format!("Invalid TOML in config file: {}", path.display()))?;
+
+    // Merge local override if present (e.g. ccrouter.local.toml)
+    let local_path = local_override_path(path);
+    if local_path.exists() {
+        let local_content = std::fs::read_to_string(&local_path)
+            .with_context(|| format!("Cannot read local override: {}", local_path.display()))?;
+        let local: PartialConfig = toml::from_str(&local_content)
+            .with_context(|| format!("Invalid TOML in local override: {}", local_path.display()))?;
+        info!("Loaded local override: {}", local_path.display());
+        config = config.merge(local);
+    }
+
     Ok(config)
 }
 
@@ -149,8 +204,8 @@ pub fn write_active_profile(path: &Path, profile_id: &str) -> Result<()> {
     Ok(())
 }
 
-/// Spawn a background task that watches the config file for changes
-/// and sends the reloaded Config over the channel.
+/// Spawn a background task that watches the config file (and its local override)
+/// for changes and sends the reloaded Config over the channel.
 pub fn watch_config(path: PathBuf, tx: mpsc::Sender<Config>) -> Result<()> {
     std::thread::spawn(move || {
         let (inner_tx, inner_rx) = std::sync::mpsc::channel::<Result<Event, notify::Error>>();
@@ -168,7 +223,17 @@ pub fn watch_config(path: PathBuf, tx: mpsc::Sender<Config>) -> Result<()> {
             return;
         }
 
-        info!("Watching config file for changes: {}", path.display());
+        // Also watch the local override if it exists
+        let local_path = local_override_path(&path);
+        if local_path.exists() {
+            if let Err(e) = watcher.watch(&local_path, RecursiveMode::NonRecursive) {
+                warn!("Cannot watch local override {}: {}", local_path.display(), e);
+            } else {
+                info!("Watching local override: {}", local_path.display());
+            }
+        }
+
+        info!("Watching config for changes: {}", path.display());
 
         for res in inner_rx {
             match res {

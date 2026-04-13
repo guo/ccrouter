@@ -1,0 +1,22 @@
+# ccrouter.local.toml — private overrides (copy to ccrouter.local.toml, never committed)
+#
+# This file is merged on top of ccrouter.toml at load time:
+#   - Profiles with the same id replace the base config version.
+#   - New profiles are appended.
+#   - [proxy] and [active] here override the base config if present.
+#
+# All sections are optional — put only what you need.
+
+# Uncomment to change the active profile locally without touching the shared config:
+# [active]
+# profile = "my-private-provider"
+
+[[profiles]]
+id = "my-private-provider"
+name = "Internal LLM Gateway"
+base_url = "https://llm.internal.mycompany.com/v1"
+api_key_env = "INTERNAL_LLM_KEY"
+format = "openai"
+
+[profiles.model_map]
+default_model = "gpt-4o"

@@ -132,6 +132,35 @@ Claude Code always sends Claude model names (e.g. `claude-3-5-sonnet-20241022`).
 default_model                = "gpt-4o"   # catch-all for unmapped models
 ```
 
+## Private providers
+
+Add private or internal providers in `ccrouter.local.toml` alongside your main config. This file is gitignored — it is never committed.
+
+```bash
+cp ccrouter.local.toml.example ccrouter.local.toml
+# edit ccrouter.local.toml with your private endpoints
+```
+
+`ccrouter.local.toml` is merged on top of `ccrouter.toml` at load time:
+- Profiles with the same `id` replace the base config version
+- New profiles are appended
+- `[proxy]` and `[active]` in the local file override the base config if present
+
+```toml
+# ccrouter.local.toml  (gitignored)
+[[profiles]]
+id = "internal"
+name = "Internal LLM Gateway"
+base_url = "https://llm.internal.mycompany.com/v1"
+api_key_env = "INTERNAL_LLM_KEY"
+format = "openai"
+
+[profiles.model_map]
+default_model = "gpt-4o"
+```
+
+Hot-reload applies to the local file too — editing either file switches providers live.
+
 ## Requirements
 
 - Rust 1.75+ (for building from source)
