@@ -15,11 +15,25 @@ Claude Code → ccrouter (localhost:15721) → any LLM provider
 
 ## Install
 
+**One-liner (macOS / Linux):**
+```bash
+curl -fsSL https://raw.githubusercontent.com/guo/ccrouter/master/install.sh | sh
+```
+
+**Manual download** — grab the binary for your platform from [Releases](https://github.com/guo/ccrouter/releases):
+
+| Platform | Binary |
+|---|---|
+| macOS (Apple Silicon + Intel universal) | `ccrouter-*-universal-apple-darwin.tar.gz` |
+| Linux x86_64 (static) | `ccrouter-*-x86_64-unknown-linux-musl.tar.gz` |
+| Linux ARM64 (static) | `ccrouter-*-aarch64-unknown-linux-musl.tar.gz` |
+
+**Build from source:**
 ```bash
 git clone https://github.com/guo/ccrouter
 cd ccrouter
 cargo build --release
-cp target/release/ccrouter ~/.local/bin/   # or any directory in your PATH
+cp target/release/ccrouter ~/.local/bin/
 ```
 
 ## Quick start
