@@ -47,15 +47,33 @@ cp ccrouter.toml ~/.config/ccrouter/config.toml
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
 
-# 3. Point Claude Code at ccrouter (one-time setup)
-ccrouter setup
-
-# 4. Start the proxy in the background
+# 3. Start the proxy in the background
 ccrouter start &
-
-# 5. Use Claude Code normally — it now routes through ccrouter
-claude "hello"
 ```
+
+Then pick one of the two ways to point Claude Code at ccrouter:
+
+### Option 1 — `ccrouter setup` (persistent)
+
+Writes `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` so every future `claude` invocation routes through ccrouter.
+
+```bash
+ccrouter setup
+claude "hello"            # now routes through ccrouter
+ccrouter setup --undo     # remove when you want stock Claude Code back
+```
+
+### Option 2 — inline env vars (temporary, no config touched)
+
+Override just for this invocation. Your `~/.claude/settings.json` stays untouched, so you can flip between ccrouter and stock Claude Code freely.
+
+```bash
+ANTHROPIC_BASE_URL="http://localhost:15721" \
+ANTHROPIC_AUTH_TOKEN="anything" \
+  claude "hello"
+```
+
+The token can be any non-empty string — ccrouter ignores it and uses the real credential from the active profile's `api_key_env`. Claude Code just requires *something* to be set.
 
 ## Commands
 

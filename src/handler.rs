@@ -35,13 +35,6 @@ pub async fn handle_messages(
         }
     };
 
-    // Resolve the API key: profile config takes priority, then fall back to
-    // whatever the caller passed in (ANTHROPIC_AUTH_TOKEN / x-api-key header).
-    // This lets users do:
-    //   ANTHROPIC_BASE_URL=http://localhost:PORT ANTHROPIC_AUTH_TOKEN=sk-... claude .
-    // without needing to configure a key in the profile at all.
-    let api_key = profile.api_key().or_else(|| extract_incoming_key(&headers));
-
     info!(
         "→ [{}] {} ({})",
         profile.id,
@@ -60,33 +53,15 @@ pub async fn handle_messages(
         }
     };
 
+    // Always use the profile's own key — the caller's ANTHROPIC_AUTH_TOKEN is a
+    // placeholder that Claude Code requires, but ccrouter ignores it and swaps
+    // in the real provider credential from its config.
+    let api_key = profile.api_key();
+
     match profile.format {
         ApiFormat::Anthropic => forward_anthropic(profile, api_key, headers, body_value).await,
         ApiFormat::OpenAI => forward_openai(profile, api_key, headers, body_value).await,
     }
-}
-
-/// Extract the API key from the incoming request's auth headers.
-fn extract_incoming_key(headers: &HeaderMap) -> Option<String> {
-    // x-api-key (Anthropic native)
-    if let Some(v) = headers.get("x-api-key") {
-        if let Ok(s) = v.to_str() {
-            if !s.is_empty() && s != "ccrouter-managed" {
-                return Some(s.to_string());
-            }
-        }
-    }
-    // Authorization: Bearer <token>
-    if let Some(v) = headers.get("authorization") {
-        if let Ok(s) = v.to_str() {
-            if let Some(token) = s.strip_prefix("Bearer ") {
-                if !token.is_empty() && token != "ccrouter-managed" {
-                    return Some(token.to_string());
-                }
-            }
-        }
-    }
-    None
 }
 
 /// Pass-through to an Anthropic-compatible endpoint: just swap auth + base URL.
