@@ -16,11 +16,24 @@ use crate::{config::Config, handler::{handle_count_tokens, handle_messages}};
 pub type SharedState = Arc<RwLock<Config>>;
 
 /// Start the proxy server. If `shutdown_rx` is provided the server stops when it fires.
+/// If `on_ready` is provided, it is invoked after the listener binds successfully.
 pub async fn run(
     config: Config,
     config_rx: mpsc::Receiver<Config>,
     shutdown_rx: Option<oneshot::Receiver<()>>,
 ) -> anyhow::Result<()> {
+    run_with_ready(config, config_rx, shutdown_rx, None::<Box<dyn FnOnce() + Send>>).await
+}
+
+pub async fn run_with_ready<F>(
+    config: Config,
+    config_rx: mpsc::Receiver<Config>,
+    shutdown_rx: Option<oneshot::Receiver<()>>,
+    on_ready: Option<F>,
+) -> anyhow::Result<()>
+where
+    F: FnOnce() + Send + 'static,
+{
     let addr: SocketAddr = format!("{}:{}", config.proxy.host, config.proxy.port)
         .parse()
         .map_err(|e| anyhow::anyhow!("Invalid bind address: {}", e))?;
@@ -46,6 +59,10 @@ pub async fn run(
 
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     info!("ccrouter listening on http://{}", addr);
+
+    if let Some(cb) = on_ready {
+        cb();
+    }
 
     match shutdown_rx {
         Some(rx) => {
