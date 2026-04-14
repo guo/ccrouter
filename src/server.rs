@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tracing::info;
 
-use crate::{config::Config, handler::handle_messages};
+use crate::{config::Config, handler::{handle_count_tokens, handle_messages}};
 
 pub type SharedState = Arc<RwLock<Config>>;
 
@@ -39,6 +39,7 @@ pub async fn run(
 
     let app = Router::new()
         .route("/v1/messages", post(handle_messages))
+        .route("/v1/messages/count_tokens", post(handle_count_tokens))
         .route("/health", get(health_handler))
         .route("/status", get(status_handler))
         .with_state(state);

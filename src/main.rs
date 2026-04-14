@@ -108,7 +108,18 @@ async fn cmd_start(config_path: PathBuf, port_override: Option<u16>) -> Result<(
         .init();
 
     match cfg.active_profile() {
-        Some(p) => info!("Active profile: {} — {} ({:?})", p.id, p.base_url, p.format),
+        Some(p) => {
+            info!("Active profile: {} — {} ({:?})", p.id, p.base_url, p.format);
+            if matches!(p.format, config::ApiFormat::Anthropic) {
+                info!(
+                    "Anthropic transport: auth_mode={:?}, messages_path={}, count_tokens_path={}, inject_claude_code_beta={}",
+                    p.auth_mode,
+                    p.messages_path,
+                    p.count_tokens_path,
+                    p.inject_claude_code_beta,
+                );
+            }
+        }
         None => anyhow::bail!(
             "Active profile '{}' not found in config. Run `ccrouter list` to see available profiles.",
             cfg.active.profile
@@ -153,9 +164,13 @@ async fn cmd_run(openai: bool, command: Vec<String>) -> Result<()> {
         name: format!("inline → {}", base_url),
         base_url,
         api_key_env: String::new(),
-        api_key_direct: if api_key.is_empty() { None } else { Some(api_key) },
         format,
         model_map: config::ModelMap::default(),
+        auth_mode: config::AnthropicAuthMode::Both,
+        messages_path: "/v1/messages".to_string(),
+        count_tokens_path: "/v1/messages/count_tokens".to_string(),
+        inject_claude_code_beta: true,
+        api_key_direct: if api_key.is_empty() { None } else { Some(api_key) },
     };
 
     let cfg = config::Config {
@@ -240,6 +255,11 @@ fn cmd_status(config_path: PathBuf) -> Result<()> {
             println!("  Name:     {}", p.name);
             println!("  Base URL: {}", p.base_url);
             println!("  Format:   {:?}", p.format);
+            if matches!(p.format, config::ApiFormat::Anthropic) {
+                println!("  Auth:     {:?}", p.auth_mode);
+                println!("  Messages: {}", p.messages_path);
+                println!("  Count:    {}", p.count_tokens_path);
+            }
             let key_status = if p.api_key_env.is_empty() {
                 "none".to_string()
             } else {

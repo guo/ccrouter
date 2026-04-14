@@ -33,6 +33,21 @@ impl ModelMap {
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AnthropicAuthMode {
+    XApiKey,
+    Bearer,
+    Both,
+    None,
+}
+
+impl Default for AnthropicAuthMode {
+    fn default() -> Self {
+        Self::Both
+    }
+}
+
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Profile {
     pub id: String,
     pub name: String,
@@ -42,6 +57,14 @@ pub struct Profile {
     pub format: ApiFormat,
     #[serde(default)]
     pub model_map: ModelMap,
+    #[serde(default)]
+    pub auth_mode: AnthropicAuthMode,
+    #[serde(default = "default_messages_path")]
+    pub messages_path: String,
+    #[serde(default = "default_count_tokens_path")]
+    pub count_tokens_path: String,
+    #[serde(default = "default_true")]
+    pub inject_claude_code_beta: bool,
     /// Direct API key — set programmatically (e.g. from env at startup), not stored in TOML.
     #[serde(skip)]
     pub api_key_direct: Option<String>,
@@ -91,6 +114,18 @@ fn default_host() -> String {
 
 fn default_log_level() -> String {
     "info".to_string()
+}
+
+fn default_true() -> bool {
+    true
+}
+
+fn default_messages_path() -> String {
+    "/v1/messages".to_string()
+}
+
+fn default_count_tokens_path() -> String {
+    "/v1/messages/count_tokens".to_string()
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]

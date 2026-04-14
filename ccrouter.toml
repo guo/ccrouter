@@ -21,6 +21,7 @@ name = "Official Anthropic"
 base_url = "https://api.anthropic.com"
 api_key_env = "ANTHROPIC_API_KEY"
 format = "anthropic"  # pass-through, no transformation
+auth_mode = "x_api_key"
 
 [[profiles]]
 id = "openai"

@@ -37,7 +37,7 @@ fn log_request_headers(prefix: &str, headers: &HeaderMap) {
 
 
 use crate::{
-    config::{ApiFormat, Config, Profile},
+    config::{AnthropicAuthMode, ApiFormat, Config, Profile},
     stream::openai_to_anthropic_sse,
     transform::{openai_to_anthropic_response, to_openai_request},
 };
@@ -49,6 +49,23 @@ pub async fn handle_messages(
     State(state): State<SharedState>,
     headers: HeaderMap,
     body: Bytes,
+) -> Result<Response<Body>, StatusCode> {
+    handle_anthropic_request(state, headers, body, false).await
+}
+
+pub async fn handle_count_tokens(
+    State(state): State<SharedState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response<Body>, StatusCode> {
+    handle_anthropic_request(state, headers, body, true).await
+}
+
+async fn handle_anthropic_request(
+    state: SharedState,
+    headers: HeaderMap,
+    body: Bytes,
+    is_count_tokens: bool,
 ) -> Result<Response<Body>, StatusCode> {
     let config = state.read().await.clone();
 
@@ -85,8 +102,16 @@ pub async fn handle_messages(
     let api_key = profile.api_key();
 
     match profile.format {
-        ApiFormat::Anthropic => forward_anthropic(profile, api_key, headers, body_value).await,
-        ApiFormat::OpenAI => forward_openai(profile, api_key, headers, body_value).await,
+        ApiFormat::Anthropic => {
+            forward_anthropic(profile, api_key, headers, body_value, is_count_tokens).await
+        }
+        ApiFormat::OpenAI => {
+            if is_count_tokens {
+                warn!("count_tokens is not supported for OpenAI transform profiles");
+                return Err(StatusCode::NOT_IMPLEMENTED);
+            }
+            forward_openai(profile, api_key, headers, body_value).await
+        }
     }
 }
 
@@ -96,20 +121,25 @@ async fn forward_anthropic(
     api_key: Option<String>,
     original_headers: HeaderMap,
     body: Value,
+    is_count_tokens: bool,
 ) -> Result<Response<Body>, StatusCode> {
     let is_streaming = body.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
-    let url = format!("{}/v1/messages", profile.base_url.trim_end_matches('/'));
+    let path = if is_count_tokens {
+        &profile.count_tokens_path
+    } else {
+        &profile.messages_path
+    };
+    let url = upstream_url(&profile.base_url, path);
 
     let client = reqwest::Client::new();
     let mut req = client.post(&url).json(&body);
 
     if let Some(key) = api_key {
-        req = req.header("x-api-key", &key).header("authorization", format!("Bearer {}", key));
-        debug!("outgoing auth: authorization + x-api-key set");
+        req = apply_anthropic_auth(req, &profile.auth_mode, &key);
+        debug!("outgoing auth mode: {:?}", profile.auth_mode);
     }
 
-    // Forward safe headers from original request
-    req = forward_headers(req, &original_headers);
+    req = forward_headers(req, &original_headers, profile.inject_claude_code_beta, is_count_tokens);
     debug!("anthropic upstream url: {}", url);
 
     let response = match req.send().await {
@@ -235,12 +265,31 @@ async fn forward_openai(
     }
 }
 
-fn forward_headers(mut req: reqwest::RequestBuilder, headers: &HeaderMap) -> reqwest::RequestBuilder {
+fn forward_headers(
+    mut req: reqwest::RequestBuilder,
+    headers: &HeaderMap,
+    inject_claude_code_beta: bool,
+    is_count_tokens: bool,
+) -> reqwest::RequestBuilder {
     let passthrough = [
+        "accept",
+        "content-type",
         "anthropic-version",
         "anthropic-beta",
-        "content-type",
-        "accept",
+        "user-agent",
+        "x-app",
+        "anthropic-dangerous-direct-browser-access",
+        "x-claude-code-session-id",
+        "x-client-request-id",
+        "x-stainless-lang",
+        "x-stainless-package-version",
+        "x-stainless-os",
+        "x-stainless-arch",
+        "x-stainless-runtime",
+        "x-stainless-runtime-version",
+        "x-stainless-retry-count",
+        "x-stainless-timeout",
+        "accept-encoding",
     ];
     for key in &passthrough {
         if let Some(val) = headers.get(*key) {
@@ -248,19 +297,76 @@ fn forward_headers(mut req: reqwest::RequestBuilder, headers: &HeaderMap) -> req
         }
     }
 
-    // Ensure the Claude Code beta marker is present for Anthropic-compatible gateways.
-    let beta = headers
-        .get("anthropic-beta")
+    if headers.get("content-type").is_none() {
+        req = req.header("content-type", "application/json");
+    }
+    if headers.get("anthropic-version").is_none() {
+        req = req.header("anthropic-version", "2023-06-01");
+    }
+    if headers.get("accept").is_none() {
+        req = req.header("accept", "application/json");
+    }
+
+    let mut beta_tokens = split_beta_tokens(headers.get("anthropic-beta"));
+    if inject_claude_code_beta {
+        ensure_beta_token(&mut beta_tokens, "claude-code-20250219");
+    }
+    if is_count_tokens {
+        ensure_beta_token(&mut beta_tokens, "token-counting-2024-11-01");
+    }
+    if !beta_tokens.is_empty() {
+        req = req.header("anthropic-beta", beta_tokens.join(","));
+    }
+
+    req
+}
+
+fn split_beta_tokens(value: Option<&HeaderValue>) -> Vec<String> {
+    value
         .and_then(|v| v.to_str().ok())
-        .unwrap_or("");
-    let merged_beta = if beta.is_empty() {
-        "claude-code-20250219".to_string()
-    } else if beta.contains("claude-code-20250219") {
-        beta.to_string()
+        .map(|s| {
+            s.split(',')
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToString::to_string)
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn ensure_beta_token(tokens: &mut Vec<String>, token: &str) {
+    if !tokens.iter().any(|t| t == token) {
+        tokens.push(token.to_string());
+    }
+}
+
+fn apply_anthropic_auth(
+    req: reqwest::RequestBuilder,
+    mode: &AnthropicAuthMode,
+    key: &str,
+) -> reqwest::RequestBuilder {
+    match mode {
+        AnthropicAuthMode::XApiKey => req.header("x-api-key", key),
+        AnthropicAuthMode::Bearer => req.header("authorization", format!("Bearer {}", key)),
+        AnthropicAuthMode::Both => req
+            .header("x-api-key", key)
+            .header("authorization", format!("Bearer {}", key)),
+        AnthropicAuthMode::None => req,
+    }
+}
+
+fn upstream_url(base_url: &str, path: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    let path = if path.starts_with('/') {
+        path.to_string()
     } else {
-        format!("{},claude-code-20250219", beta)
+        format!("/{}", path)
     };
-    req.header("anthropic-beta", merged_beta)
+    if base.ends_with(&path) {
+        base.to_string()
+    } else {
+        format!("{}{}", base, path)
+    }
 }
 
 fn copy_response_headers(src: &reqwest::header::HeaderMap, dst: &mut HeaderMap) {
