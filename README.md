@@ -56,13 +56,18 @@ Then pick one of the two ways to point Claude Code at ccrouter:
 
 ### Option 1 — `ccrouter setup` (persistent)
 
-Writes `ANTHROPIC_BASE_URL` into `~/.claude/settings.json` so every future `claude` invocation routes through ccrouter.
+Writes the following into `~/.claude/settings.json` → `env` so every future `claude` invocation routes through ccrouter:
+
+- `ANTHROPIC_BASE_URL` — pointing at the ccrouter port
+- `ANTHROPIC_AUTH_TOKEN` — placeholder value `"ccrouter-managed"` (Claude Code requires *some* token; ccrouter ignores it and uses the real credential from the active profile's `api_key_env`)
 
 ```bash
 ccrouter setup
 claude "hello"            # now routes through ccrouter
 ccrouter setup --undo     # remove when you want stock Claude Code back
 ```
+
+`--undo` removes `ANTHROPIC_BASE_URL` and the placeholder token. If you'd previously put a real token into `env.ANTHROPIC_AUTH_TOKEN` by hand, `--undo` leaves it alone and prints a notice — delete it yourself if you want it gone.
 
 ### Option 2 — inline env vars (temporary, no config touched)
 
@@ -105,8 +110,8 @@ ccrouter run -- <cmd>       Ephemeral proxy wrapping a single command
 ccrouter switch <profile>   Switch active provider (hot-reload, no restart)
 ccrouter status             Show current provider, daemon state, and health
 ccrouter list               List all configured profiles
-ccrouter setup [--port N]   Write ANTHROPIC_BASE_URL to ~/.claude/settings.json
-ccrouter setup --undo       Remove ccrouter from Claude Code settings
+ccrouter setup [--port N]   Write ANTHROPIC_BASE_URL + placeholder token to ~/.claude/settings.json
+ccrouter setup --undo       Remove ccrouter entries from Claude Code settings
 ```
 
 ### Daemon mode
