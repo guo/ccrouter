@@ -1,6 +1,6 @@
 # ccrouter
 
-Lightweight CLI proxy that routes [Claude Code](https://claude.ai/code) to any LLM provider — OpenAI, Ollama, OpenRouter, Groq, DeepSeek, or any OpenAI-compatible endpoint. Switch providers instantly by editing one config file or running a single command.
+Lightweight CLI proxy that routes [Claude Code](https://claude.ai/code) to any Anthropic-compatible endpoint as a pass-through, or to OpenAI-format providers (OpenAI, Ollama, OpenRouter, Groq, DeepSeek, and similar) via on-the-fly request/response translation. Switch providers by editing one config file or running a single command — the change applies within a second, no restart.
 
 ## How it works
 
