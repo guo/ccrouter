@@ -24,7 +24,9 @@ cargo build --release
 echo "==> Installing to $INSTALL_DIR/ccrouter"
 cp target/release/ccrouter "$INSTALL_DIR/ccrouter"
 chmod +x "$INSTALL_DIR/ccrouter"
-"$INSTALL_DIR/ccrouter" --version
+# Use the freshly built binary for the smoke check — macOS anti-tampering
+# occasionally SIGKILLs the copied file under $INSTALL_DIR on first run.
+target/release/ccrouter --version
 
 echo "==> Committing version bump"
 git add Cargo.toml Cargo.lock
