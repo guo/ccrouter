@@ -47,8 +47,9 @@ cp ccrouter.toml ~/.config/ccrouter/config.toml
 export OPENAI_API_KEY=sk-...
 export ANTHROPIC_API_KEY=sk-ant-...
 
-# 3. Start the proxy in the background
-ccrouter start &
+# 3. Start the proxy
+ccrouter start -d           # run in background (daemon mode)
+# Or foreground: ccrouter start
 ```
 
 Then pick one of the two ways to point Claude Code at ccrouter:
@@ -79,12 +80,32 @@ The token can be any non-empty string — ccrouter ignores it and uses the real 
 
 ```
 ccrouter start              Start proxy (foreground)
+ccrouter start -d           Start proxy as a background daemon
+ccrouter stop               Stop the daemon
+ccrouter restart            Restart the daemon
 ccrouter switch <profile>   Switch active provider (hot-reload, no restart)
-ccrouter status             Show current provider and config
+ccrouter status             Show current provider, daemon state, and health
 ccrouter list               List all configured profiles
 ccrouter setup              Write ANTHROPIC_BASE_URL to ~/.claude/settings.json
 ccrouter setup --undo       Remove ccrouter from Claude Code settings
 ```
+
+### Daemon mode
+
+`ccrouter start -d` runs the proxy as a background daemon. Runtime files are stored in `$XDG_STATE_HOME/ccrouter` (fallback `~/.local/state/ccrouter`):
+
+- `daemon.pid` — process id
+- `daemon.json` — pid, port, started_at, config_path, log_path
+- `daemon.log` — stdout/stderr output
+
+```bash
+ccrouter start -d            # start daemon
+ccrouter status              # check daemon state + health probe
+ccrouter stop                # graceful shutdown
+ccrouter restart             # stop, then start (preserves port)
+```
+
+The daemon responds to `SIGTERM`/`SIGINT` for graceful shutdown and hot-reloads config changes within 1 second.
 
 ## Config file
 
