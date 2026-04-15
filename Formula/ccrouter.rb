@@ -1,22 +1,22 @@
 class Ccrouter < Formula
   desc "Lightweight CLI proxy to route Claude Code to any LLM provider"
   homepage "https://github.com/guo/ccrouter"
-  version "0.1.8"
+  version "0.1.9"
   license "MIT"
 
   on_macos do
     url "https://github.com/guo/ccrouter/releases/download/v#{version}/ccrouter-v#{version}-universal-apple-darwin.tar.gz"
-    sha256 "2580444758448abe515133938556b9975abc90d73b14d04d4a249151c97171c5"
+    sha256 "95775ba1247aaed6054318b43e27a6decf00a8a6dc82496880c647a87fc0c43e"
   end
 
   on_linux do
     on_intel do
       url "https://github.com/guo/ccrouter/releases/download/v#{version}/ccrouter-v#{version}-x86_64-unknown-linux-musl.tar.gz"
-      sha256 "dba357f26cad6681dc15ff7676f4ff52356482f831377497d36ab9ff3d7e3d08"
+      sha256 "9952c94a3167212e7d041c7a6fc6b166e1344f4c585d6694b7fb6c888462ce8e"
     end
     on_arm do
       url "https://github.com/guo/ccrouter/releases/download/v#{version}/ccrouter-v#{version}-aarch64-unknown-linux-musl.tar.gz"
-      sha256 "b6ed8e4429a3b1195655e9fd1f013b989b5c5fcd3b3d08a2a4bc97c742f4d7bb"
+      sha256 "dcd59d91c6a533b55bf131c40428d57b753ad773ba8f7513f97c1709ef62a44a"
     end
   end
 
