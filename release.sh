@@ -11,7 +11,7 @@ if [ -z "$VERSION" ]; then
 fi
 
 TAG="v${VERSION}"
-INSTALL_DIR="${INSTALL_DIR:-$HOME/dotfiles/bin}"
+INSTALL_DIR="${INSTALL_DIR:-$HOME/.local/bin}"
 
 echo "==> Bumping version to $VERSION"
 sed -i '' "s/^version = \".*\"/version = \"${VERSION}\"/" Cargo.toml
@@ -22,6 +22,7 @@ echo "==> Building release binary"
 cargo build --release
 
 echo "==> Installing to $INSTALL_DIR/ccrouter"
+mkdir -p "$INSTALL_DIR"
 cp target/release/ccrouter "$INSTALL_DIR/ccrouter"
 chmod +x "$INSTALL_DIR/ccrouter"
 # Use the freshly built binary for the smoke check — macOS anti-tampering

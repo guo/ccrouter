@@ -31,6 +31,20 @@ jobs:
             target/x86_64-apple-darwin/release/ccrouter \
             -output ccrouter
           lipo -info ccrouter
+
+      # Ad-hoc sign the universal binary. Required on Apple Silicon (arm64 kernel
+      # refuses to exec a binary with an invalid/missing signature — lipo-joined
+      # binaries lose the per-slice ad-hoc signatures that rustc's linker adds).
+      # This is NOT a Developer ID signature — it won't satisfy Gatekeeper on
+      # browser-downloaded tarballs. Homebrew and `curl | sh` installs work fine
+      # because neither sets the quarantine xattr.
+      - name: Ad-hoc codesign
+        run: |
+          codesign --sign - --force --timestamp=none ccrouter
+          codesign --verify --verbose ccrouter
+
+      - name: Package
+        run: |
           tar czf ccrouter-${{ github.ref_name }}-universal-apple-darwin.tar.gz ccrouter
 
       - uses: actions/upload-artifact@v4
@@ -114,28 +128,26 @@ jobs:
             --notes "$(cat <<EOF
           ## Install
 
-          **macOS (Apple Silicon + Intel universal):**
-          \`\`\`bash
-          curl -fsSL https://github.com/${{ github.repository }}/releases/download/${tag}/ccrouter-${tag}-universal-apple-darwin.tar.gz | tar xz
-          sudo mv ccrouter /usr/local/bin/
-          \`\`\`
-
-          **Linux x86_64:**
-          \`\`\`bash
-          curl -fsSL https://github.com/${{ github.repository }}/releases/download/${tag}/ccrouter-${tag}-x86_64-unknown-linux-musl.tar.gz | tar xz
-          sudo mv ccrouter /usr/local/bin/
-          \`\`\`
-
-          **Linux ARM64:**
-          \`\`\`bash
-          curl -fsSL https://github.com/${{ github.repository }}/releases/download/${tag}/ccrouter-${tag}-aarch64-unknown-linux-musl.tar.gz | tar xz
-          sudo mv ccrouter /usr/local/bin/
-          \`\`\`
-
-          Or use the install script:
+          **One-liner (macOS / Linux):**
           \`\`\`bash
           curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/master/install.sh | sh
           \`\`\`
+
+          Installs to \`~/.local/bin\` by default. Override with \`INSTALL_DIR=/usr/local/bin\`.
+
+          **Homebrew (macOS / Linux):**
+          \`\`\`bash
+          brew tap ${{ github.repository }} https://github.com/${{ github.repository }}
+          brew install ccrouter
+          \`\`\`
+
+          **Manual download:**
+
+          - macOS (universal): \`ccrouter-${tag}-universal-apple-darwin.tar.gz\`
+          - Linux x86_64: \`ccrouter-${tag}-x86_64-unknown-linux-musl.tar.gz\`
+          - Linux ARM64: \`ccrouter-${tag}-aarch64-unknown-linux-musl.tar.gz\`
+
+          The macOS binary is ad-hoc signed — it works with Homebrew and the install script. Browser-downloaded tarballs may need \`xattr -dr com.apple.quarantine ccrouter\` before first run.
 
           See \`checksums.txt\` to verify your download.
           EOF

@@ -20,6 +20,16 @@ Claude Code → ccrouter (localhost:15721) → any LLM provider
 curl -fsSL https://raw.githubusercontent.com/guo/ccrouter/master/install.sh | sh
 ```
 
+Installs to `~/.local/bin` by default. Set `INSTALL_DIR=/usr/local/bin` to install system-wide (will prompt for sudo).
+
+**Homebrew (macOS / Linux):**
+```bash
+brew tap guo/ccrouter https://github.com/guo/ccrouter
+brew install ccrouter
+```
+
+(One-time `brew tap` — after that `brew upgrade ccrouter` just works.)
+
 **Manual download** — grab the binary for your platform from [Releases](https://github.com/guo/ccrouter/releases):
 
 | Platform | Binary |
@@ -28,12 +38,13 @@ curl -fsSL https://raw.githubusercontent.com/guo/ccrouter/master/install.sh | sh
 | Linux x86_64 (static) | `ccrouter-*-x86_64-unknown-linux-musl.tar.gz` |
 | Linux ARM64 (static) | `ccrouter-*-aarch64-unknown-linux-musl.tar.gz` |
 
+The macOS binary is ad-hoc signed — works with Homebrew and the install script out of the box. If you download the tarball via a browser, you may need `xattr -dr com.apple.quarantine ccrouter` before first run (or right-click → Open in Finder and click "Allow Anyway").
+
 **Build from source:**
 ```bash
 git clone https://github.com/guo/ccrouter
 cd ccrouter
-cargo build --release
-cp target/release/ccrouter ~/.local/bin/
+cargo install --path .
 ```
 
 ## Quick start
