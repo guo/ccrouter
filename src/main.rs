@@ -1,6 +1,7 @@
 mod config;
 mod daemon;
 mod handler;
+mod init;
 mod server;
 mod setup;
 mod stream;
@@ -78,6 +79,13 @@ enum Command {
         #[arg(long)]
         undo: bool,
     },
+
+    /// Generate a starter config file at ~/.config/ccrouter/config.toml
+    Init {
+        /// Overwrite existing config
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 #[tokio::main]
@@ -104,6 +112,7 @@ async fn main() -> Result<()> {
         Command::Stop => cmd_stop(),
         Command::Restart => cmd_restart(config_path),
         Command::Setup { port, undo } => cmd_setup(config_path, port, undo),
+        Command::Init { force } => init::cmd_init(force),
     }
 }
 
@@ -608,7 +617,7 @@ fn log_active_profile(cfg: &config::Config) {
 }
 
 fn example_config_hint() -> &'static str {
-    "cp ccrouter.toml ~/.config/ccrouter/config.toml   (use the example from the repo)"
+    "ccrouter init   (generates a starter config at ~/.config/ccrouter/config.toml)"
 }
 
 fn free_port() -> Result<u16> {

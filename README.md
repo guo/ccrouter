@@ -50,12 +50,10 @@ cargo install --path .
 ## Quick start
 
 ```bash
-# 1. Copy the example config
-mkdir -p ~/.config/ccrouter
-cp ccrouter.toml ~/.config/ccrouter/config.toml
+# 1. Generate a starter config
+ccrouter init
 
-# 2. Set your API keys
-export OPENAI_API_KEY=sk-...
+# 2. Set your API key
 export ANTHROPIC_API_KEY=sk-ant-...
 
 # 3. Start the proxy
@@ -113,6 +111,7 @@ Good for quick experiments, CI, or testing a gateway without touching `~/.claude
 ## Commands
 
 ```
+ccrouter init               Generate a starter config at ~/.config/ccrouter/config.toml
 ccrouter start              Start proxy (foreground)
 ccrouter start -d           Start proxy as a background daemon
 ccrouter stop               Stop the daemon

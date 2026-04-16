@@ -24,6 +24,18 @@ class Ccrouter < Formula
     bin.install "ccrouter"
   end
 
+  def caveats
+    <<~EOS
+      To get started, generate a config file:
+        ccrouter init
+
+      Then set your API key and start the proxy:
+        export ANTHROPIC_API_KEY=sk-ant-...
+        ccrouter start -d
+        ccrouter setup
+    EOS
+  end
+
   test do
     assert_match "ccrouter", shell_output("#{bin}/ccrouter --version")
   end
