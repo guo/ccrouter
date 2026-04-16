@@ -4,6 +4,15 @@ on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Existing tag to (re-)release (e.g. v0.1.9)'
+        required: true
+
+env:
+  # Resolve tag once — works for both tag-push and manual dispatch triggers.
+  RELEASE_TAG: ${{ inputs.tag || github.ref_name }}
 
 jobs:
   # macOS universal binary: build arm64 + x86_64 on the same runner, combine with lipo
@@ -12,6 +21,8 @@ jobs:
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -45,12 +56,12 @@ jobs:
 
       - name: Package
         run: |
-          tar czf ccrouter-${{ github.ref_name }}-universal-apple-darwin.tar.gz ccrouter
+          tar czf ccrouter-${{ env.RELEASE_TAG }}-universal-apple-darwin.tar.gz ccrouter
 
       - uses: actions/upload-artifact@v4
         with:
           name: universal-apple-darwin
-          path: ccrouter-${{ github.ref_name }}-universal-apple-darwin.tar.gz
+          path: ccrouter-${{ env.RELEASE_TAG }}-universal-apple-darwin.tar.gz
 
   # Linux builds (static musl — no system dependencies)
   linux:
@@ -66,6 +77,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.RELEASE_TAG }}
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -91,12 +104,12 @@ jobs:
       - name: Package
         run: |
           cp target/${{ matrix.target }}/release/ccrouter ccrouter
-          tar czf ccrouter-${{ github.ref_name }}-${{ matrix.target }}.tar.gz ccrouter
+          tar czf ccrouter-${{ env.RELEASE_TAG }}-${{ matrix.target }}.tar.gz ccrouter
 
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.target }}
-          path: ccrouter-${{ github.ref_name }}-${{ matrix.target }}.tar.gz
+          path: ccrouter-${{ env.RELEASE_TAG }}-${{ matrix.target }}.tar.gz
 
   release:
     name: Publish release
@@ -122,10 +135,16 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          tag=${{ github.ref_name }}
-          gh release create "${tag}" \
-            --title "ccrouter ${tag}" \
-            --notes "$(cat <<EOF
+          tag=${{ env.RELEASE_TAG }}
+          # If release already exists (re-run), upload assets to existing release
+          if gh release view "${tag}" --repo ${{ github.repository }} >/dev/null 2>&1; then
+            echo "Release ${tag} already exists — uploading assets to existing release."
+            gh release upload "${tag}" --clobber \
+              artifacts/*.tar.gz artifacts/checksums.txt
+          else
+            gh release create "${tag}" \
+              --title "ccrouter ${tag}" \
+              --notes "$(cat <<EOF
           ## Install
 
           **One-liner (macOS / Linux):**
@@ -152,17 +171,17 @@ jobs:
           See \`checksums.txt\` to verify your download.
           EOF
           )" \
-            artifacts/*.tar.gz artifacts/checksums.txt
+              artifacts/*.tar.gz artifacts/checksums.txt
+          fi
 
       # Push the new version + SHAs into guo/homebrew-tap so `brew upgrade ccrouter`
       # picks up the release automatically. Needs a PAT with `repo` scope on the tap
-      # repo stored as HOMEBREW_TAP_TOKEN. Missing token → step fails loudly but the
-      # release itself is already published by this point.
+      # repo stored as HOMEBREW_TAP_TOKEN. Missing token → step skips with a warning;
+      # the release itself is already published by this point.
       - name: Update Homebrew tap
-        if: ${{ !contains(github.ref_name, '-') }}  # skip pre-release tags like v0.2.0-rc1
+        if: ${{ !contains(env.RELEASE_TAG, '-') }}  # skip pre-release tags like v0.2.0-rc1
         env:
           HOMEBREW_TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
-          TAG: ${{ github.ref_name }}
         run: |
           set -euo pipefail
           if [ -z "${HOMEBREW_TAP_TOKEN}" ]; then
@@ -170,6 +189,7 @@ jobs:
             exit 0
           fi
 
+          TAG="${{ env.RELEASE_TAG }}"
           VERSION="${TAG#v}"
           MACOS_SHA=$(awk '/universal-apple-darwin/ {print $1}' artifacts/checksums.txt)
           LINUX_X86_SHA=$(awk '/x86_64-unknown-linux-musl/ {print $1}' artifacts/checksums.txt)
