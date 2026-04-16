@@ -24,7 +24,7 @@ Installs to `~/.local/bin` by default. Set `INSTALL_DIR=/usr/local/bin` to insta
 
 **Homebrew (macOS / Linux):**
 ```bash
-brew tap guo/ccrouter https://github.com/guo/ccrouter
+brew tap guo/tap
 brew install ccrouter
 ```
 
