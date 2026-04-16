@@ -203,7 +203,7 @@ dependencies = [
 
 [[package]]
 name = "ccrouter"
-version = "0.1.9"
+version = "0.1.10"
 dependencies = [
  "anyhow",
  "async-stream",
