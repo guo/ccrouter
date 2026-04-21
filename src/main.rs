@@ -2,6 +2,7 @@ mod config;
 mod daemon;
 mod handler;
 mod init;
+mod responses;
 mod server;
 mod setup;
 mod stream;

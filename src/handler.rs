@@ -38,6 +38,7 @@ fn log_request_headers(prefix: &str, headers: &HeaderMap) {
 
 use crate::{
     config::{AnthropicAuthMode, ApiFormat, Config, Profile},
+    responses::{messages_hash, responses_to_anthropic_response, responses_to_anthropic_sse, to_responses_request},
     stream::openai_to_anthropic_sse,
     transform::{openai_to_anthropic_response, to_openai_request},
 };
@@ -84,6 +85,7 @@ async fn handle_anthropic_request(
         match profile.format {
             ApiFormat::Anthropic => "pass-through",
             ApiFormat::OpenAI => "transform",
+            ApiFormat::Responses => "responses-api",
         }
     );
     log_request_headers("incoming", &headers);
@@ -111,6 +113,13 @@ async fn handle_anthropic_request(
                 return Err(StatusCode::NOT_IMPLEMENTED);
             }
             forward_openai(profile, api_key, headers, body_value).await
+        }
+        ApiFormat::Responses => {
+            if is_count_tokens {
+                warn!("count_tokens is not supported for Responses API profiles");
+                return Err(StatusCode::NOT_IMPLEMENTED);
+            }
+            forward_responses(profile, api_key, headers, body_value).await
         }
     }
 }
@@ -249,6 +258,100 @@ async fn forward_openai(
         })?;
 
         let anthropic_resp = match openai_to_anthropic_response(resp_value, &original_model) {
+            Ok(r) => r,
+            Err(e) => {
+                warn!("Response transform error: {}", e);
+                return Err(StatusCode::INTERNAL_SERVER_ERROR);
+            }
+        };
+
+        let out = serde_json::to_vec(&anthropic_resp).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+        Ok(Response::builder()
+            .status(200)
+            .header("content-type", "application/json")
+            .body(Body::from(out))
+            .unwrap())
+    }
+}
+
+/// Transform Anthropic request → OpenAI Responses API, forward, transform response back.
+async fn forward_responses(
+    profile: Profile,
+    api_key: Option<String>,
+    original_headers: HeaderMap,
+    body: Value,
+) -> Result<Response<Body>, StatusCode> {
+    let is_streaming = body.get("stream").and_then(|s| s.as_bool()).unwrap_or(false);
+    let original_model = body
+        .get("model")
+        .and_then(|m| m.as_str())
+        .unwrap_or("claude-3-5-sonnet-20241022")
+        .to_string();
+
+    let hash = messages_hash(&body);
+
+    let responses_body = match to_responses_request(body, &profile.id, &profile.model_map) {
+        Ok(b) => b,
+        Err(e) => {
+            warn!("Responses transform error: {}", e);
+            return Err(StatusCode::BAD_REQUEST);
+        }
+    };
+
+    debug!("Responses API body: {}", serde_json::to_string_pretty(&responses_body).unwrap_or_default());
+
+    let url = format!("{}/responses", profile.base_url.trim_end_matches('/'));
+    let client = reqwest::Client::new();
+    let mut req = client.post(&url).json(&responses_body);
+
+    if let Some(key) = api_key {
+        req = req.header("authorization", format!("Bearer {}", key));
+    }
+    if let Some(val) = original_headers.get("accept") {
+        req = req.header("accept", val);
+    }
+    debug!("responses upstream url: {}", url);
+
+    let response = match req.send().await {
+        Ok(r) => r,
+        Err(e) => {
+            warn!("Upstream request failed: {}", e);
+            return Err(StatusCode::BAD_GATEWAY);
+        }
+    };
+
+    let status = response.status();
+    if !status.is_success() {
+        let code = StatusCode::from_u16(status.as_u16()).unwrap_or(StatusCode::BAD_GATEWAY);
+        let body_bytes = response.bytes().await.unwrap_or_default();
+        warn!("Upstream error {}: {}", code, String::from_utf8_lossy(&body_bytes));
+        return Ok(Response::builder()
+            .status(code)
+            .header("content-type", "application/json")
+            .body(Body::from(body_bytes))
+            .unwrap());
+    }
+
+    let msg_id = format!("msg_{}", uuid_short());
+
+    if is_streaming {
+        let stream = response.bytes_stream();
+        let anthropic_stream = responses_to_anthropic_sse(stream, &original_model, &msg_id, &profile.id, hash);
+        Ok(Response::builder()
+            .status(200)
+            .header("content-type", "text/event-stream")
+            .header("cache-control", "no-cache")
+            .header("connection", "keep-alive")
+            .body(Body::from_stream(anthropic_stream))
+            .unwrap())
+    } else {
+        let resp_bytes = response.bytes().await.map_err(|_| StatusCode::BAD_GATEWAY)?;
+        let resp_value: Value = serde_json::from_slice(&resp_bytes).map_err(|e| {
+            warn!("Cannot parse Responses API response: {}", e);
+            StatusCode::BAD_GATEWAY
+        })?;
+
+        let anthropic_resp = match responses_to_anthropic_response(resp_value, &original_model, &profile.id, hash) {
             Ok(r) => r,
             Err(e) => {
                 warn!("Response transform error: {}", e);

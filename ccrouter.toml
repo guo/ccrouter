@@ -79,3 +79,13 @@ format = "openai"
 
 [profiles.model_map]
 default_model = "deepseek-chat"
+
+[[profiles]]
+id = "codex"
+name = "OpenAI Codex (Responses API)"
+base_url = "https://api.openai.com/v1"
+api_key_env = "OPENAI_API_KEY"
+format = "responses"  # uses /v1/responses with previous_response_id — avoids replaying full history
+
+[profiles.model_map]
+default_model = "codex-mini-latest"
