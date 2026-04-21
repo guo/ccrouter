@@ -11,6 +11,9 @@ use tracing::{info, warn};
 pub enum ApiFormat {
     Anthropic,
     OpenAI,
+    /// OpenAI Responses API (/v1/responses) — uses previous_response_id for
+    /// conversation continuity instead of replaying the full message history.
+    Responses,
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
